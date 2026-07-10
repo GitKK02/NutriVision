@@ -1,0 +1,81 @@
+import base64
+import json
+from openai import OpenAI
+from config import OPENAI_API_KEY, OPENAI_MODEL
+
+def available():
+    return bool(OPENAI_API_KEY)
+
+def _client():
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY не указан")
+    return OpenAI(api_key=OPENAI_API_KEY)
+
+def analyze_food_text(text: str) -> dict:
+    if not available():
+        return {
+            "title": text,
+            "calories": 0,
+            "protein_g": 0,
+            "fat_g": 0,
+            "carbs_g": 0,
+            "comment": "Добавлено без AI-расчёта."
+        }
+    response = _client().chat.completions.create(
+        model=OPENAI_MODEL,
+        temperature=0.2,
+        messages=[
+            {"role":"system","content":"Верни только JSON: title, calories, protein_g, fat_g, carbs_g, comment. Оцени блюдо по описанию пользователя."},
+            {"role":"user","content":text}
+        ]
+    )
+    return _parse(response.choices[0].message.content or "{}")
+
+def analyze_food_image(image_bytes: bytes) -> dict:
+    if not available():
+        raise RuntimeError("OPENAI_API_KEY не указан")
+    b64 = base64.b64encode(image_bytes).decode()
+    response = _client().chat.completions.create(
+        model=OPENAI_MODEL,
+        temperature=0.2,
+        messages=[
+            {"role":"system","content":"Ты нутрициолог. Верни только JSON: title, calories, protein_g, fat_g, carbs_g, comment."},
+            {"role":"user","content":[
+                {"type":"text","text":"Проанализируй еду на фото и оцени порцию."},
+                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
+            ]}
+        ]
+    )
+    return _parse(response.choices[0].message.content or "{}")
+
+def coach(summary: dict, user: dict) -> str:
+    if not available():
+        tips = []
+        if summary["water_ml"] < (user.get("water_target") or 2500) * 0.6:
+            tips.append("💧 Выпей ещё воды.")
+        if summary["protein_g"] < (user.get("protein_target") or 120) * 0.7:
+            tips.append("💪 Добавь белковый продукт.")
+        if not tips:
+            tips.append("✅ Ты хорошо держишь план.")
+        return "🤖 AI Coach\n\n" + "\n".join(tips)
+    response = _client().chat.completions.create(
+        model=OPENAI_MODEL,
+        temperature=0.6,
+        messages=[
+            {"role":"system","content":"Ты дружелюбный AI Health Coach. Дай короткий персональный совет на русском без медицинских обещаний."},
+            {"role":"user","content":f"Профиль: {user}\nСегодня: {summary}"}
+        ]
+    )
+    return "🤖 AI Coach\n\n" + (response.choices[0].message.content or "").strip()
+
+def _parse(raw: str) -> dict:
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    data = json.loads(raw)
+    return {
+        "title": str(data.get("title") or "Блюдо"),
+        "calories": float(data.get("calories") or 0),
+        "protein_g": float(data.get("protein_g") or 0),
+        "fat_g": float(data.get("fat_g") or 0),
+        "carbs_g": float(data.get("carbs_g") or 0),
+        "comment": str(data.get("comment") or ""),
+    }
