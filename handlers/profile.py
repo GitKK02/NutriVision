@@ -105,7 +105,8 @@ async def activity(message: Message, state: FSMContext):
     data["activity"] = mapping[message.text]
     update_user(message.from_user.id, **data, profile_completed=1)
     user = get_user(message.from_user.id)
-    if user.get("goal"):
+
+    if user and user.get("goal"):
         update_user(message.from_user.id, **calculate_targets(
             user["age"], user["gender"], user["height_cm"],
             user["weight_kg"], user["activity"], user["goal"]

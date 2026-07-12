@@ -92,12 +92,40 @@ def get_user(user_id: int):
 def update_user(user_id: int, **fields):
     if not fields:
         return
-    fields["updated_at"] = datetime.now().isoformat()
-    keys = list(fields.keys())
-    values = [fields[k] for k in keys]
-    sql = ", ".join(f"{k}=?" for k in keys)
+
+    now = datetime.now().isoformat()
+
     with connect() as db:
-        db.execute(f"UPDATE users SET {sql} WHERE telegram_id=?", (*values, user_id))
+        existing = db.execute(
+            "SELECT telegram_id FROM users WHERE telegram_id=?",
+            (user_id,),
+        ).fetchone()
+
+        if not existing:
+            db.execute(
+                """
+                INSERT INTO users(
+                    telegram_id,
+                    first_name,
+                    username,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, '', '', ?, ?)
+                """,
+                (user_id, now, now),
+            )
+
+        fields["updated_at"] = now
+
+        keys = list(fields.keys())
+        values = [fields[key] for key in keys]
+        assignments = ", ".join(f"{key}=?" for key in keys)
+
+        db.execute(
+            f"UPDATE users SET {assignments} WHERE telegram_id=?",
+            (*values, user_id),
+        )
 
 def add_food(user_id: int, title: str, calories=0, protein_g=0, fat_g=0, carbs_g=0, source="text"):
     with connect() as db:
