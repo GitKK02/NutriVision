@@ -40,30 +40,48 @@ async def diary(message: Message):
             reply_markup=delete_food_keyboard(row["id"])
         )
 
-@router.message(FoodStates.waiting_text)
-async def food_text(message: Message, state: FSMContext):
-    if not message.text:
-        return
-    data = analyze_food_text(message.text)
-    pending[message.from_user.id] = data
-    await state.clear()
-    await message.answer(format_result(data), reply_markup=confirm_food_keyboard())
-
-@router.message(lambda m: bool(m.photo))
+@router.message(FoodStates.waiting_text, lambda m: bool(m.photo))
 async def photo(message: Message):
     if not available():
         await message.answer("⚠️ Добавь OPENAI_API_KEY в .env для анализа фото.")
         return
+
     await message.answer("🔎 Анализирую фото...")
+
     try:
         photo = message.photo[-1]
         file = await message.bot.get_file(photo.file_id)
         downloaded = await message.bot.download_file(file.file_path)
+
         data = analyze_food_image(downloaded.read())
+
         pending[message.from_user.id] = data
-        await message.answer(format_result(data), reply_markup=confirm_food_keyboard())
+
+        await message.answer(
+            format_result(data),
+            reply_markup=confirm_food_keyboard()
+        )
+
     except Exception as exc:
-        await message.answer(f"Не удалось проанализировать фото: {exc}")
+        await message.answer(
+            f"Не удалось проанализировать фото: {exc}"
+        )
+
+
+@router.message(FoodStates.waiting_text)
+async def food_text(message: Message, state: FSMContext):
+    if not message.text:
+        return
+
+    data = analyze_food_text(message.text)
+    pending[message.from_user.id] = data
+
+    await state.clear()
+
+    await message.answer(
+        format_result(data),
+        reply_markup=confirm_food_keyboard()
+    )
 
 @router.callback_query(lambda c: c.data == "food:add")
 async def add_pending(callback: CallbackQuery):
