@@ -4,7 +4,7 @@ from database import day_history
 
 router = Router()
 
-@router.message(lambda m: m.text == "📅 История")
+@router.message(lambda m: m.text in ["📅 История", "📖 История"])
 async def history(message: Message):
     rows = day_history(message.from_user.id, 7)
     if not rows:

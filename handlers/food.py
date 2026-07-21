@@ -19,7 +19,7 @@ def format_result(data):
         f"{data.get('comment','')}\n\nДобавить в дневник?"
     )
 
-@router.message(lambda m: m.text == "🍽 Питание")
+@router.message(lambda m: m.text in ["🍽 Питание", "📸 Анализ еды"])
 async def food(message: Message, state: FSMContext):
     await state.set_state(FoodStates.waiting_text)
     await message.answer(

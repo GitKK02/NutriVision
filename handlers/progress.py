@@ -5,7 +5,7 @@ from services.formatters import bar, goal_name
 
 router = Router()
 
-@router.message(lambda m: m.text == "📊 Прогресс")
+@router.message(lambda m: m.text in ["📊 Прогресс", "📈 Прогресс"])
 async def progress(message: Message):
     user = get_user(message.from_user.id)
     s = daily_summary(message.from_user.id)
