@@ -25,7 +25,7 @@ def analyze_food_text(text: str) -> dict:
         model=OPENAI_MODEL,
         temperature=0.2,
         messages=[
-            {"role":"system","content":"Верни только JSON: title, calories, protein_g, fat_g, carbs_g, comment. Оцени блюдо по описанию пользователя."},
+            {"role":"system","content":"Ты эксперт по питанию. Оцени блюдо по описанию пользователя. Верни строго JSON без текста вокруг: title, calories, protein_g, fat_g, carbs_g, comment."},
             {"role":"user","content":text}
         ]
     )
@@ -39,7 +39,7 @@ def analyze_food_image(image_bytes: bytes) -> dict:
         model=OPENAI_MODEL,
         temperature=0.2,
         messages=[
-            {"role":"system","content":"Ты эксперт по питанию. Проанализируй изображение еды. Определи блюдо, примерный размер порции и пищевую ценность. Верни строго JSON без текста вокруг: title, calories, protein_g, fat_g, carbs_g, comment."},
+            {"role":"system","content":"Ты эксперт по питанию. Проанализируй изображение еды. Определи блюдо, размер порции и пищевую ценность. Учитывай визуальный размер порции. Верни строго JSON без текста вокруг: title, calories, protein_g, fat_g, carbs_g, comment."},
             {"role":"user","content":[
                 {"type":"text","text":"Определи еду на фото и рассчитай примерные калории и БЖУ."},
                 {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
