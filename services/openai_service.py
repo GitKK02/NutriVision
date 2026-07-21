@@ -34,19 +34,46 @@ def analyze_food_text(text: str) -> dict:
 def analyze_food_image(image_bytes: bytes) -> dict:
     if not available():
         raise RuntimeError("OPENAI_API_KEY не указан")
+
     b64 = base64.b64encode(image_bytes).decode()
-    response = _client().chat.completions.create(
+
+    response = _client().responses.create(
         model=OPENAI_MODEL,
         temperature=0.2,
-        messages=[
-            {"role":"system","content":"Ты эксперт по питанию. Проанализируй изображение еды. Определи блюдо, размер порции и пищевую ценность. Учитывай визуальный размер порции. Верни строго JSON без текста вокруг: title, calories, protein_g, fat_g, carbs_g, comment."},
-            {"role":"user","content":[
-                {"type":"text","text":"Определи еду на фото и рассчитай примерные калории и БЖУ."},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
-            ]}
+        input=[
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Ты эксперт по питанию. "
+                            "Проанализируй изображение еды. "
+                            "Определи блюдо, примерный размер порции "
+                            "и пищевую ценность. "
+                            "Верни строго JSON без текста вокруг: "
+                            "title, calories, protein_g, fat_g, carbs_g, comment."
+                        )
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Определи еду на фото и рассчитай примерные калории и БЖУ."
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{b64}"
+                    }
+                ]
+            }
         ]
     )
-    return _parse(response.choices[0].message.content or "{}")
+
+    return _parse(response.output_text)
 
 def coach(summary: dict, user: dict) -> str:
     if not available():
