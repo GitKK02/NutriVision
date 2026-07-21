@@ -2,11 +2,12 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🍽 Питание"), KeyboardButton(text="💧 Вода")],
-        [KeyboardButton(text="📊 Прогресс"), KeyboardButton(text="🤖 AI Coach")],
+        [KeyboardButton(text="📸 Анализ еды"), KeyboardButton(text="📊 Сегодня")],
+        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="📈 Прогресс")],
+        [KeyboardButton(text="📖 История"), KeyboardButton(text="💧 Вода")],
+        [KeyboardButton(text="🤖 AI Coach"), KeyboardButton(text="🏆 Достижения")],
         [KeyboardButton(text="🎯 Моя цель"), KeyboardButton(text="⚖️ Вес")],
-        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="🏆 Достижения")],
-        [KeyboardButton(text="📅 История"), KeyboardButton(text="⏰ Напоминания")]
+        [KeyboardButton(text="⏰ Напоминания")]
     ],
     resize_keyboard=True
 )
