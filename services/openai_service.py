@@ -39,9 +39,9 @@ def analyze_food_image(image_bytes: bytes) -> dict:
         model=OPENAI_MODEL,
         temperature=0.2,
         messages=[
-            {"role":"system","content":"Ты нутрициолог. Верни только JSON: title, calories, protein_g, fat_g, carbs_g, comment."},
+            {"role":"system","content":"Ты эксперт по питанию. Проанализируй изображение еды. Определи блюдо, примерный размер порции и пищевую ценность. Верни строго JSON без текста вокруг: title, calories, protein_g, fat_g, carbs_g, comment."},
             {"role":"user","content":[
-                {"type":"text","text":"Проанализируй еду на фото и оцени порцию."},
+                {"type":"text","text":"Определи еду на фото и рассчитай примерные калории и БЖУ."},
                 {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}}
             ]}
         ]
@@ -70,7 +70,15 @@ def coach(summary: dict, user: dict) -> str:
 
 def _parse(raw: str) -> dict:
     raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except Exception:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(raw[start:end + 1])
+        else:
+            raise ValueError("AI вернул некорректный формат ответа")
     return {
         "title": str(data.get("title") or "Блюдо"),
         "calories": float(data.get("calories") or 0),
