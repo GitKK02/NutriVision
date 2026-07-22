@@ -41,7 +41,7 @@ async def diary(message: Message):
         )
 
 @router.message(FoodStates.waiting_text, lambda m: bool(m.photo))
-async def photo(message: Message):
+async def photo(message: Message, state: FSMContext):
     if not available():
         await message.answer("⚠️ Добавь OPENAI_API_KEY в .env для анализа фото.")
         return
@@ -56,6 +56,7 @@ async def photo(message: Message):
         data = analyze_food_image(downloaded.read())
 
         pending[message.from_user.id] = data
+        await state.clear()
 
         await message.answer(
             format_result(data),
@@ -84,19 +85,21 @@ async def food_text(message: Message, state: FSMContext):
     )
 
 @router.callback_query(lambda c: c.data == "food:add")
-async def add_pending(callback: CallbackQuery):
+async def add_pending(callback: CallbackQuery, state: FSMContext):
     data = pending.pop(callback.from_user.id, None)
     if not data:
         await callback.answer("Нет данных")
         return
     add_food(callback.from_user.id, data["title"], data["calories"], data["protein_g"], data["fat_g"], data["carbs_g"], "ai")
     award(callback.from_user.id, "first_food", "🍽 Первая запись питания")
+    await state.clear()
     await callback.message.answer("✅ Добавлено в дневник.", reply_markup=main_menu)
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "food:cancel")
-async def cancel(callback: CallbackQuery):
+async def cancel(callback: CallbackQuery, state: FSMContext):
     pending.pop(callback.from_user.id, None)
+    await state.clear()
     await callback.message.answer("Ок, не добавляю.", reply_markup=main_menu)
     await callback.answer()
 
