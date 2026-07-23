@@ -2,12 +2,34 @@ from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from states import FoodStates
-from database import add_food, today_food, delete_food, award
-from keyboards.main import food_menu, confirm_food_keyboard, delete_food_keyboard, main_menu
+from database import (
+    add_food,
+    today_food,
+    delete_food,
+    award,
+    get_user,
+    daily_summary,
+)
+from keyboards.main import (
+    food_menu,
+    confirm_food_keyboard,
+    delete_food_keyboard,
+    main_menu,
+    today_actions_keyboard,
+)
 from services.openai_service import analyze_food_text, analyze_food_image, available
 
 router = Router()
 pending = {}
+
+# Навигационные кнопки не должны восприниматься как названия блюд.
+SYSTEM_BUTTONS = {
+    "📸 Анализ еды", "🍽 Питание", "💧 Вода", "📊 Сегодня",
+    "📊 Прогресс", "📈 Прогресс", "☰ Меню", "🤖 AI Coach",
+    "📖 История", "📋 Дневник питания", "👤 Профиль",
+    "🎯 Моя цель", "⚖️ Вес", "🏆 Достижения",
+    "⏰ Напоминания", "⬅️ Назад",
+}
 
 def format_result(data):
     return (
@@ -82,7 +104,10 @@ async def photo(message: Message, state: FSMContext):
         )
 
 
-@router.message(FoodStates.waiting_text)
+@router.message(
+    FoodStates.waiting_text,
+    lambda m: bool(m.text) and m.text not in SYSTEM_BUTTONS,
+)
 async def food_text(message: Message, state: FSMContext):
     if not message.text:
         return
@@ -103,10 +128,33 @@ async def add_pending(callback: CallbackQuery, state: FSMContext):
     if not data:
         await callback.answer("Нет данных")
         return
-    add_food(callback.from_user.id, data["title"], data["calories"], data["protein_g"], data["fat_g"], data["carbs_g"], "ai")
-    award(callback.from_user.id, "first_food", "🍽 Первая запись питания")
+    user_id = callback.from_user.id
+    add_food(
+        user_id,
+        data["title"],
+        data["calories"],
+        data["protein_g"],
+        data["fat_g"],
+        data["carbs_g"],
+        "ai",
+    )
+    award(user_id, "first_food", "🍽 Первая запись питания")
     await state.clear()
-    await callback.message.answer("✅ Добавлено в дневник.", reply_markup=main_menu)
+
+    await callback.message.answer(
+        f"✅ {data['title']} добавлено в дневник.",
+        reply_markup=main_menu,
+    )
+
+    # Немедленно перечитываем SQLite и показываем обновлённое «Сегодня».
+    from services.formatters import dashboard
+
+    user = get_user(user_id)
+    summary = daily_summary(user_id)
+    await callback.message.answer(
+        dashboard(user, summary),
+        reply_markup=today_actions_keyboard(),
+    )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "food:cancel")

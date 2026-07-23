@@ -1,6 +1,7 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
 from database import ensure_user, get_user, daily_summary
 from keyboards.main import main_menu
 from services.formatters import bar, goal_name
@@ -28,6 +29,11 @@ async def start(message: Message):
     await message.answer(dashboard(user, daily_summary(u.id)), reply_markup=main_menu)
 
 @router.message(lambda m: m.text == "⬅️ Назад")
-async def back(message: Message):
-    user = get_user(message.from_user.id)
-    await message.answer(dashboard(user, daily_summary(message.from_user.id)), reply_markup=main_menu)
+async def back(message: Message, state: FSMContext):
+    await state.clear()
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    await message.answer(
+        dashboard(user, daily_summary(user_id)),
+        reply_markup=main_menu,
+    )
