@@ -75,6 +75,114 @@ def analyze_food_image(image_bytes: bytes) -> dict:
 
     return _parse(response.output_text)
 
+
+def recalculate_food_portion(data: dict, instruction: str) -> dict:
+    instruction = instruction.strip()
+    if not instruction:
+        raise ValueError("Новая порция не указана")
+
+    if not available():
+        normalized = instruction.lower().replace(",", ".")
+        multiplier = None
+        if "полов" in normalized:
+            multiplier = 0.5
+        elif "треть" in normalized:
+            multiplier = 1 / 3
+        else:
+            import re
+            match = re.search(r"(\d+(?:\.\d+)?)\s*(?:порц|x|х|раз)", normalized)
+            if match:
+                multiplier = float(match.group(1))
+
+        if multiplier is None or multiplier <= 0:
+            raise RuntimeError(
+                "Для точного пересчёта граммов требуется OPENAI_API_KEY. "
+                "Без AI можно написать: 2 порции или половина порции."
+            )
+
+        result = dict(data)
+        for key in ("calories", "protein_g", "fat_g", "carbs_g"):
+            result[key] = round(float(data.get(key) or 0) * multiplier, 2)
+        result["comment"] = f"Порция пересчитана: {instruction}."
+        return result
+
+    response = _client().chat.completions.create(
+        model=OPENAI_MODEL,
+        temperature=0.1,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Ты эксперт по питанию. Пользователь меняет размер порции уже "
+                    "распознанного блюда. Пересчитай калории и БЖУ. Учитывай команды "
+                    "вроде 150 г, 250 грамм, 2 порции, половина порции. "
+                    "Верни строго JSON: title, calories, protein_g, fat_g, carbs_g, comment."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Текущий результат: {json.dumps(data, ensure_ascii=False)}\n"
+                    f"Новая порция: {instruction}"
+                ),
+            },
+        ],
+    )
+    return _parse(response.choices[0].message.content or "{}")
+
+
+def reanalyze_food_text(text: str) -> dict:
+    if not available():
+        return analyze_food_text(text)
+    response = _client().chat.completions.create(
+        model=OPENAI_MODEL,
+        temperature=0.1,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Повтори анализ блюда внимательнее. Уточни реалистичную порцию, "
+                    "калории и БЖУ. Верни строго JSON: title, calories, protein_g, "
+                    "fat_g, carbs_g, comment."
+                ),
+            },
+            {"role": "user", "content": text},
+        ],
+    )
+    return _parse(response.choices[0].message.content or "{}")
+
+
+def reanalyze_food_image(image_bytes: bytes) -> dict:
+    if not available():
+        raise RuntimeError("OPENAI_API_KEY не указан")
+
+    b64 = base64.b64encode(image_bytes).decode()
+    response = _client().responses.create(
+        model=OPENAI_MODEL,
+        temperature=0.1,
+        input=[
+            {
+                "role": "system",
+                "content": [{
+                    "type": "input_text",
+                    "text": (
+                        "Повтори анализ изображения еды максимально внимательно. "
+                        "Уточни блюдо, видимую порцию, соусы, масло, калории и БЖУ. "
+                        "Верни строго JSON: title, calories, protein_g, fat_g, carbs_g, comment."
+                    ),
+                }],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Проанализируй фото ещё раз."},
+                    {"type": "input_image", "image_url": f"data:image/jpeg;base64,{b64}"},
+                ],
+            },
+        ],
+    )
+    return _parse(response.output_text)
+
 def coach(summary: dict, user: dict) -> str:
     if not available():
         tips = []

@@ -17,7 +17,10 @@ from keyboards.main import (
     main_menu,
     today_actions_keyboard,
 )
-from services.openai_service import analyze_food_text, analyze_food_image, available
+from services.openai_service import (
+    analyze_food_text, analyze_food_image, recalculate_food_portion,
+    reanalyze_food_text, reanalyze_food_image, available,
+)
 
 router = Router()
 pending = {}
@@ -88,9 +91,12 @@ async def photo(message: Message, state: FSMContext):
         file = await message.bot.get_file(photo.file_id)
         downloaded = await message.bot.download_file(file.file_path)
 
-        data = analyze_food_image(downloaded.read())
+        image_bytes = downloaded.read()
+        data = analyze_food_image(image_bytes)
 
-        pending[message.from_user.id] = data
+        pending[message.from_user.id] = {
+            **data, "_source": "photo", "_image_bytes": image_bytes
+        }
         await state.clear()
 
         await message.answer(
@@ -112,8 +118,11 @@ async def food_text(message: Message, state: FSMContext):
     if not message.text:
         return
 
-    data = analyze_food_text(message.text)
-    pending[message.from_user.id] = data
+    original_text = message.text.strip()
+    data = analyze_food_text(original_text)
+    pending[message.from_user.id] = {
+        **data, "_source": "text", "_original_text": original_text
+    }
 
     await state.clear()
 
@@ -121,6 +130,84 @@ async def food_text(message: Message, state: FSMContext):
         format_result(data),
         reply_markup=confirm_food_keyboard()
     )
+
+
+@router.callback_query(lambda c: c.data == "food:portion")
+async def request_portion(callback: CallbackQuery, state: FSMContext):
+    if not pending.get(callback.from_user.id):
+        await callback.answer("Результат анализа уже недоступен.", show_alert=True)
+        return
+    await state.set_state(FoodStates.waiting_portion)
+    await callback.message.answer(
+        "✏️ Укажи новую порцию.\n\n"
+        "Например:\n• 150 г\n• 250 грамм\n• 2 порции\n• половина порции"
+    )
+    await callback.answer()
+
+
+@router.message(
+    FoodStates.waiting_portion,
+    lambda m: bool(m.text) and m.text not in SYSTEM_BUTTONS,
+)
+async def update_portion(message: Message, state: FSMContext):
+    current = pending.get(message.from_user.id)
+    if not current:
+        await state.clear()
+        await message.answer(
+            "Результат анализа уже недоступен. Запусти анализ заново.",
+            reply_markup=main_menu,
+        )
+        return
+
+    await message.answer("⚖️ Пересчитываю порцию...")
+    try:
+        metadata = {k: v for k, v in current.items() if k.startswith("_")}
+        nutrition = {k: v for k, v in current.items() if not k.startswith("_")}
+        updated = recalculate_food_portion(nutrition, message.text.strip())
+        pending[message.from_user.id] = {**updated, **metadata}
+        await state.clear()
+        await message.answer(format_result(updated), reply_markup=confirm_food_keyboard())
+    except Exception as exc:
+        await message.answer(
+            f"Не удалось пересчитать порцию: {exc}\n\n"
+            "Попробуй: 150 г, 2 порции или половина порции."
+        )
+
+
+@router.callback_query(lambda c: c.data == "food:reanalyze")
+async def reanalyze_pending(callback: CallbackQuery, state: FSMContext):
+    current = pending.get(callback.from_user.id)
+    if not current:
+        await callback.answer("Результат анализа уже недоступен.", show_alert=True)
+        return
+
+    await callback.answer()
+    await callback.message.answer("🔄 Анализирую ещё раз более внимательно...")
+
+    try:
+        if current.get("_source") == "photo":
+            image_bytes = current.get("_image_bytes")
+            if not image_bytes:
+                raise RuntimeError("Исходное фото не найдено")
+            updated = reanalyze_food_image(image_bytes)
+            pending[callback.from_user.id] = {
+                **updated, "_source": "photo", "_image_bytes": image_bytes
+            }
+        elif current.get("_source") == "text":
+            original_text = current.get("_original_text")
+            if not original_text:
+                raise RuntimeError("Исходное описание не найдено")
+            updated = reanalyze_food_text(original_text)
+            pending[callback.from_user.id] = {
+                **updated, "_source": "text", "_original_text": original_text
+            }
+        else:
+            raise RuntimeError("Неизвестный источник анализа")
+
+        await state.clear()
+        await callback.message.answer(format_result(updated), reply_markup=confirm_food_keyboard())
+    except Exception as exc:
+        await callback.message.answer(f"Не удалось повторить анализ: {exc}")
 
 @router.callback_query(lambda c: c.data == "food:add")
 async def add_pending(callback: CallbackQuery, state: FSMContext):

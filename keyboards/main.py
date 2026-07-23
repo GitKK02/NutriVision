@@ -70,10 +70,14 @@ food_menu = ReplyKeyboardMarkup(
 )
 
 def confirm_food_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Добавить", callback_data="food:add"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="food:cancel")
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Добавить", callback_data="food:add")],
+        [
+            InlineKeyboardButton(text="✏️ Изменить порцию", callback_data="food:portion"),
+            InlineKeyboardButton(text="🔄 Анализировать ещё", callback_data="food:reanalyze"),
+        ],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="food:cancel")],
+    ])
 
 def today_actions_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
