@@ -16,6 +16,7 @@ from handlers.history import router as history_router
 from handlers.achievements import router as achievements_router
 from handlers.reminders import router as reminders_router
 from handlers.dashboard import router as dashboard_router
+from handlers.menu import router as menu_router
 
 async def main():
     if not BOT_TOKEN:
@@ -27,6 +28,7 @@ async def main():
 
     for router in [
         start_router,
+        menu_router,
         profile_router,
         goals_router,
         water_router,

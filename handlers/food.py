@@ -28,8 +28,9 @@ async def food(message: Message, state: FSMContext):
     )
 
 @router.message(lambda m: m.text == "📋 Дневник питания")
-async def diary(message: Message):
-    rows = today_food(message.from_user.id)
+async def diary(message: Message, user_id: int | None = None):
+    actual_user_id = user_id or message.from_user.id
+    rows = today_food(actual_user_id)
     if not rows:
         await message.answer("📋 Сегодня дневник пуст.")
         return
@@ -39,6 +40,18 @@ async def diary(message: Message):
             f"• {row['title']}\n🔥 {round(row['calories'])} ккал",
             reply_markup=delete_food_keyboard(row["id"])
         )
+
+@router.callback_query(lambda c: c.data == "today:add_food")
+async def add_food_from_today(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await food(callback.message, state)
+
+
+@router.callback_query(lambda c: c.data == "today:diary")
+async def diary_from_today(callback: CallbackQuery):
+    await callback.answer()
+    await diary(callback.message, callback.from_user.id)
+
 
 @router.message(FoodStates.waiting_text, lambda m: bool(m.photo))
 async def photo(message: Message, state: FSMContext):
