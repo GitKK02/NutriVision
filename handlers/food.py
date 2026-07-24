@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import suppress
+
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -44,6 +47,29 @@ def format_result(data):
         f"{data.get('comment','')}\n\nДобавить в дневник?"
     )
 
+
+async def animate_analysis(status_message: Message, stages: list[str], delay: float = 1.0):
+    """Обновляет одно сообщение, пока AI выполняет анализ."""
+    index = 0
+    while True:
+        stage = stages[min(index, len(stages) - 1)]
+        try:
+            await status_message.edit_text(stage)
+        except Exception:
+            pass
+        index += 1
+        await asyncio.sleep(delay)
+
+
+async def finish_analysis(animation_task: asyncio.Task, status_message: Message, text: str):
+    animation_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await animation_task
+    try:
+        await status_message.edit_text(text)
+    except Exception:
+        pass
+
 @router.message(lambda m: m.text in ["🍽 Питание", "📸 Анализ еды"])
 async def food(message: Message, state: FSMContext):
     await state.set_state(FoodStates.waiting_text)
@@ -84,7 +110,20 @@ async def photo(message: Message, state: FSMContext):
         await message.answer("⚠️ Добавь OPENAI_API_KEY в .env для анализа фото.")
         return
 
-    await message.answer("🔎 Анализирую фото...")
+    status_message = await message.answer("📷 Фото получено")
+    animation_task = asyncio.create_task(
+        animate_analysis(
+            status_message,
+            [
+                "📷 Фото получено\n\nПодготавливаю изображение...",
+                "🔎 Распознаю продукты...",
+                "🍽 Определяю состав блюда...",
+                "⚖️ Оцениваю размер порции...",
+                "🧠 Рассчитываю калории и БЖУ...",
+                "✨ Проверяю результат...",
+            ],
+        )
+    )
 
     try:
         photo = message.photo[-1]
@@ -92,12 +131,13 @@ async def photo(message: Message, state: FSMContext):
         downloaded = await message.bot.download_file(file.file_path)
 
         image_bytes = downloaded.read()
-        data = analyze_food_image(image_bytes)
+        data = await asyncio.to_thread(analyze_food_image, image_bytes)
 
         pending[message.from_user.id] = {
             **data, "_source": "photo", "_image_bytes": image_bytes
         }
         await state.clear()
+        await finish_analysis(animation_task, status_message, "✅ Анализ завершён")
 
         await message.answer(
             format_result(data),
@@ -105,9 +145,8 @@ async def photo(message: Message, state: FSMContext):
         )
 
     except Exception as exc:
-        await message.answer(
-            f"Не удалось проанализировать фото: {exc}"
-        )
+        await finish_analysis(animation_task, status_message, "❌ Не удалось завершить анализ")
+        await message.answer(f"Не удалось проанализировать фото: {exc}")
 
 
 @router.message(
@@ -119,17 +158,36 @@ async def food_text(message: Message, state: FSMContext):
         return
 
     original_text = message.text.strip()
-    data = analyze_food_text(original_text)
-    pending[message.from_user.id] = {
-        **data, "_source": "text", "_original_text": original_text
-    }
-
-    await state.clear()
-
-    await message.answer(
-        format_result(data),
-        reply_markup=confirm_food_keyboard()
+    status_message = await message.answer("📝 Описание получено")
+    animation_task = asyncio.create_task(
+        animate_analysis(
+            status_message,
+            [
+                "📝 Описание получено\n\nИзучаю состав блюда...",
+                "🔎 Анализирую продукты...",
+                "⚖️ Оцениваю порцию...",
+                "🧠 Рассчитываю калории и БЖУ...",
+                "✨ Проверяю результат...",
+            ],
+        )
     )
+
+    try:
+        data = await asyncio.to_thread(analyze_food_text, original_text)
+        pending[message.from_user.id] = {
+            **data, "_source": "text", "_original_text": original_text
+        }
+
+        await state.clear()
+        await finish_analysis(animation_task, status_message, "✅ Анализ завершён")
+
+        await message.answer(
+            format_result(data),
+            reply_markup=confirm_food_keyboard()
+        )
+    except Exception as exc:
+        await finish_analysis(animation_task, status_message, "❌ Не удалось завершить анализ")
+        await message.answer(f"Не удалось проанализировать описание: {exc}")
 
 
 @router.callback_query(lambda c: c.data == "food:portion")
@@ -159,15 +217,32 @@ async def update_portion(message: Message, state: FSMContext):
         )
         return
 
-    await message.answer("⚖️ Пересчитываю порцию...")
+    status_message = await message.answer("⚖️ Новая порция получена")
+    animation_task = asyncio.create_task(
+        animate_analysis(
+            status_message,
+            [
+                "⚖️ Уточняю размер порции...",
+                "🧠 Пересчитываю калории и БЖУ...",
+                "✨ Проверяю новые значения...",
+            ],
+            delay=0.9,
+        )
+    )
     try:
         metadata = {k: v for k, v in current.items() if k.startswith("_")}
         nutrition = {k: v for k, v in current.items() if not k.startswith("_")}
-        updated = recalculate_food_portion(nutrition, message.text.strip())
+        updated = await asyncio.to_thread(
+            recalculate_food_portion,
+            nutrition,
+            message.text.strip(),
+        )
         pending[message.from_user.id] = {**updated, **metadata}
         await state.clear()
+        await finish_analysis(animation_task, status_message, "✅ Порция пересчитана")
         await message.answer(format_result(updated), reply_markup=confirm_food_keyboard())
     except Exception as exc:
+        await finish_analysis(animation_task, status_message, "❌ Не удалось пересчитать порцию")
         await message.answer(
             f"Не удалось пересчитать порцию: {exc}\n\n"
             "Попробуй: 150 г, 2 порции или половина порции."
@@ -182,14 +257,26 @@ async def reanalyze_pending(callback: CallbackQuery, state: FSMContext):
         return
 
     await callback.answer()
-    await callback.message.answer("🔄 Анализирую ещё раз более внимательно...")
+    status_message = await callback.message.answer("🔄 Запускаю повторный анализ")
+    animation_task = asyncio.create_task(
+        animate_analysis(
+            status_message,
+            [
+                "🔄 Повторно изучаю блюдо...",
+                "🔎 Проверяю распознанные продукты...",
+                "⚖️ Уточняю размер порции...",
+                "🧠 Пересчитываю калории и БЖУ...",
+                "✨ Сравниваю результат...",
+            ],
+        )
+    )
 
     try:
         if current.get("_source") == "photo":
             image_bytes = current.get("_image_bytes")
             if not image_bytes:
                 raise RuntimeError("Исходное фото не найдено")
-            updated = reanalyze_food_image(image_bytes)
+            updated = await asyncio.to_thread(reanalyze_food_image, image_bytes)
             pending[callback.from_user.id] = {
                 **updated, "_source": "photo", "_image_bytes": image_bytes
             }
@@ -197,7 +284,7 @@ async def reanalyze_pending(callback: CallbackQuery, state: FSMContext):
             original_text = current.get("_original_text")
             if not original_text:
                 raise RuntimeError("Исходное описание не найдено")
-            updated = reanalyze_food_text(original_text)
+            updated = await asyncio.to_thread(reanalyze_food_text, original_text)
             pending[callback.from_user.id] = {
                 **updated, "_source": "text", "_original_text": original_text
             }
@@ -205,8 +292,10 @@ async def reanalyze_pending(callback: CallbackQuery, state: FSMContext):
             raise RuntimeError("Неизвестный источник анализа")
 
         await state.clear()
+        await finish_analysis(animation_task, status_message, "✅ Повторный анализ завершён")
         await callback.message.answer(format_result(updated), reply_markup=confirm_food_keyboard())
     except Exception as exc:
+        await finish_analysis(animation_task, status_message, "❌ Повторный анализ не завершён")
         await callback.message.answer(f"Не удалось повторить анализ: {exc}")
 
 @router.callback_query(lambda c: c.data == "food:add")
