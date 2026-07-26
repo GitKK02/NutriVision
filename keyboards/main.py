@@ -90,7 +90,20 @@ def today_actions_keyboard():
         ]
     ])
 
+def diary_entry_keyboard(entry_id: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🔁 Повторить",
+                callback_data=f"food:repeat:{entry_id}",
+            ),
+            InlineKeyboardButton(
+                text="🗑 Удалить",
+                callback_data=f"food:delete:{entry_id}",
+            ),
+        ]
+    ])
+
+
 def delete_food_keyboard(entry_id: int):
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🗑 Удалить", callback_data=f"food:delete:{entry_id}")
-    ]])
+    return diary_entry_keyboard(entry_id)

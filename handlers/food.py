@@ -9,6 +9,7 @@ from database import (
     add_food,
     today_food,
     delete_food,
+    get_food_entry,
     award,
     get_user,
     daily_summary,
@@ -16,7 +17,7 @@ from database import (
 from keyboards.main import (
     food_menu,
     confirm_food_keyboard,
-    delete_food_keyboard,
+    diary_entry_keyboard,
     main_menu,
     today_actions_keyboard,
 )
@@ -25,6 +26,11 @@ from services.openai_service import (
     reanalyze_food_text, reanalyze_food_image, available,
 )
 from services.nutrition_assistant import nutrition_assistant_message
+from services.food_diary import (
+    format_diary_entry,
+    format_diary_summary,
+    group_food_entries,
+)
 
 router = Router()
 pending = {}
@@ -83,15 +89,30 @@ async def food(message: Message, state: FSMContext):
 async def diary(message: Message, user_id: int | None = None):
     actual_user_id = user_id or message.from_user.id
     rows = today_food(actual_user_id)
+
     if not rows:
-        await message.answer("📋 Сегодня дневник пуст.")
-        return
-    await message.answer("📋 Дневник питания сегодня")
-    for row in rows:
         await message.answer(
-            f"• {row['title']}\n🔥 {round(row['calories'])} ккал",
-            reply_markup=delete_food_keyboard(row["id"])
+            "📋 Сегодня дневник пуст.\n\n"
+            "Добавь первое блюдо через «📸 Анализ еды».",
+            reply_markup=main_menu,
         )
+        return
+
+    await message.answer("📋 Дневник питания · Сегодня")
+
+    for group_title, entries in group_food_entries(rows):
+        await message.answer(group_title)
+
+        for row in entries:
+            await message.answer(
+                format_diary_entry(row),
+                reply_markup=diary_entry_keyboard(row["id"]),
+            )
+
+    await message.answer(
+        format_diary_summary(daily_summary(actual_user_id)),
+        reply_markup=main_menu,
+    )
 
 @router.callback_query(lambda c: c.data == "today:add_food")
 async def add_food_from_today(callback: CallbackQuery, state: FSMContext):
@@ -346,9 +367,40 @@ async def cancel(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Ок, не добавляю.", reply_markup=main_menu)
     await callback.answer()
 
+@router.callback_query(lambda c: c.data and c.data.startswith("food:repeat:"))
+async def repeat_food(callback: CallbackQuery):
+    entry_id = int(callback.data.split(":")[-1])
+    row = get_food_entry(callback.from_user.id, entry_id)
+
+    if not row:
+        await callback.answer("Запись уже недоступна.", show_alert=True)
+        return
+
+    add_food(
+        callback.from_user.id,
+        row["title"],
+        row["calories"],
+        row["protein_g"],
+        row["fat_g"],
+        row["carbs_g"],
+        "repeat",
+    )
+
+    await callback.answer("Блюдо добавлено ещё раз.")
+    await callback.message.answer(f"🔁 {row['title']} добавлено повторно.")
+    await diary(callback.message, callback.from_user.id)
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("food:delete:"))
 async def delete(callback: CallbackQuery):
     entry_id = int(callback.data.split(":")[-1])
+    row = get_food_entry(callback.from_user.id, entry_id)
+
+    if not row:
+        await callback.answer("Запись уже удалена.", show_alert=True)
+        return
+
     delete_food(callback.from_user.id, entry_id)
-    await callback.message.edit_text("🗑 Запись удалена.")
-    await callback.answer()
+    await callback.message.edit_text(f"🗑 {row['title']} удалено из дневника.")
+    await callback.answer("Запись удалена.")
+    await diary(callback.message, callback.from_user.id)

@@ -139,6 +139,14 @@ def delete_food(user_id: int, entry_id: int):
     with connect() as db:
         db.execute("DELETE FROM food_entries WHERE id=? AND telegram_id=?", (entry_id, user_id))
 
+def get_food_entry(user_id: int, entry_id: int):
+    with connect() as db:
+        row = db.execute(
+            "SELECT * FROM food_entries WHERE id=? AND telegram_id=?",
+            (entry_id, user_id),
+        ).fetchone()
+        return dict(row) if row else None
+
 def today_food(user_id: int):
     day = date.today().isoformat()
     with connect() as db:
