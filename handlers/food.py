@@ -24,6 +24,7 @@ from services.openai_service import (
     analyze_food_text, analyze_food_image, recalculate_food_portion,
     reanalyze_food_text, reanalyze_food_image, available,
 )
+from services.nutrition_assistant import nutrition_assistant_message
 
 router = Router()
 pending = {}
@@ -327,6 +328,11 @@ async def add_pending(callback: CallbackQuery, state: FSMContext):
 
     user = get_user(user_id)
     summary = daily_summary(user_id)
+
+    assistant_text = nutrition_assistant_message(user, summary)
+    if assistant_text:
+        await callback.message.answer(assistant_text)
+
     await callback.message.answer(
         dashboard(user, summary),
         reply_markup=today_actions_keyboard(),
