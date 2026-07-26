@@ -11,9 +11,10 @@ main_menu = ReplyKeyboardMarkup(
 extended_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🤖 AI Coach"), KeyboardButton(text="📈 Прогресс")],
-        [KeyboardButton(text="📖 История"), KeyboardButton(text="👤 Профиль")],
-        [KeyboardButton(text="🎯 Моя цель"), KeyboardButton(text="⚖️ Вес")],
-        [KeyboardButton(text="🏆 Достижения"), KeyboardButton(text="⏰ Напоминания")],
+        [KeyboardButton(text="📖 История"), KeyboardButton(text="📅 Отчёт за неделю")],
+        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="🎯 Моя цель")],
+        [KeyboardButton(text="⚖️ Вес"), KeyboardButton(text="🏆 Достижения")],
+        [KeyboardButton(text="⏰ Напоминания")],
         [KeyboardButton(text="🏠 Главное меню")],
     ],
     resize_keyboard=True

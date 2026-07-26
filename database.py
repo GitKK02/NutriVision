@@ -423,13 +423,17 @@ def day_history(user_id: int, days=7):
         rows = db.execute("""
             SELECT substr(created_at,1,10) AS day,
                    ROUND(SUM(calories)) AS calories,
-                   ROUND(SUM(protein_g)) AS protein_g
+                   ROUND(SUM(protein_g)) AS protein_g,
+                   ROUND(SUM(fat_g)) AS fat_g,
+                   ROUND(SUM(carbs_g)) AS carbs_g,
+                   COUNT(*) AS food_count
             FROM food_entries
             WHERE telegram_id=?
             GROUP BY substr(created_at,1,10)
             ORDER BY day DESC LIMIT ?
         """, (user_id, days)).fetchall()
         result = [dict(r) for r in rows]
+
     water_map = {}
     with connect() as db:
         rows = db.execute("""
@@ -438,9 +442,16 @@ def day_history(user_id: int, days=7):
             GROUP BY substr(created_at,1,10)
         """, (user_id,)).fetchall()
         water_map = {r["day"]: int(r["water_ml"] or 0) for r in rows}
+
     for item in result:
         item["water_ml"] = water_map.get(item["day"], 0)
+
     return result
+
+
+def weekly_history(user_id: int, days: int = 7):
+    safe_days = max(1, min(int(days), 31))
+    return day_history(user_id, safe_days)
 
 def award(user_id: int, code: str, title: str) -> bool:
     try:
