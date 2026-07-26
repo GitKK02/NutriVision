@@ -94,6 +94,12 @@ def diary_entry_keyboard(entry_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
+                text="✏️ Изменить порцию",
+                callback_data=f"food:edit:{entry_id}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
                 text="🔁 Повторить",
                 callback_data=f"food:repeat:{entry_id}",
             ),
@@ -101,7 +107,13 @@ def diary_entry_keyboard(entry_id: int):
                 text="🗑 Удалить",
                 callback_data=f"food:delete:{entry_id}",
             ),
-        ]
+        ],
+    ])
+
+
+def saved_food_edit_cancel_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="food:edit_cancel")]
     ])
 
 

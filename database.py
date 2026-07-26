@@ -147,6 +147,34 @@ def get_food_entry(user_id: int, entry_id: int):
         ).fetchone()
         return dict(row) if row else None
 
+def update_food_entry(
+    user_id: int,
+    entry_id: int,
+    title: str,
+    calories: float,
+    protein_g: float,
+    fat_g: float,
+    carbs_g: float,
+) -> bool:
+    with connect() as db:
+        cursor = db.execute(
+            """
+            UPDATE food_entries
+            SET title=?, calories=?, protein_g=?, fat_g=?, carbs_g=?
+            WHERE id=? AND telegram_id=?
+            """,
+            (
+                title,
+                float(calories or 0),
+                float(protein_g or 0),
+                float(fat_g or 0),
+                float(carbs_g or 0),
+                entry_id,
+                user_id,
+            ),
+        )
+        return cursor.rowcount == 1
+
 def today_food(user_id: int):
     day = date.today().isoformat()
     with connect() as db:

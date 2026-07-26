@@ -14,3 +14,4 @@ class WeightStates(StatesGroup):
 class FoodStates(StatesGroup):
     waiting_text = State()
     waiting_portion = State()
+    waiting_saved_portion = State()

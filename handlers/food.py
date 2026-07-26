@@ -10,6 +10,7 @@ from database import (
     today_food,
     delete_food,
     get_food_entry,
+    update_food_entry,
     award,
     get_user,
     daily_summary,
@@ -18,6 +19,7 @@ from keyboards.main import (
     food_menu,
     confirm_food_keyboard,
     diary_entry_keyboard,
+    saved_food_edit_cancel_keyboard,
     main_menu,
     today_actions_keyboard,
 )
@@ -366,6 +368,121 @@ async def cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("Ок, не добавляю.", reply_markup=main_menu)
     await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("food:edit:"))
+async def request_saved_portion(callback: CallbackQuery, state: FSMContext):
+    entry_id = int(callback.data.split(":")[-1])
+    row = get_food_entry(callback.from_user.id, entry_id)
+
+    if not row:
+        await callback.answer("Запись уже недоступна.", show_alert=True)
+        return
+
+    await state.clear()
+    await state.set_state(FoodStates.waiting_saved_portion)
+    await state.update_data(saved_food_entry_id=entry_id)
+
+    await callback.message.answer(
+        f"✏️ Изменение порции\n\n"
+        f"Блюдо: {row['title']}\n\n"
+        "Укажи новую порцию. Например:\n"
+        "• 150 г\n"
+        "• 250 грамм\n"
+        "• 2 порции\n"
+        "• половина порции",
+        reply_markup=saved_food_edit_cancel_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.message(
+    FoodStates.waiting_saved_portion,
+    lambda m: bool(m.text) and m.text not in SYSTEM_BUTTONS,
+)
+async def update_saved_portion(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    entry_id = state_data.get("saved_food_entry_id")
+
+    if not entry_id:
+        await state.clear()
+        await message.answer(
+            "Не удалось определить запись. Открой дневник и попробуй ещё раз.",
+            reply_markup=main_menu,
+        )
+        return
+
+    row = get_food_entry(message.from_user.id, int(entry_id))
+    if not row:
+        await state.clear()
+        await message.answer("Запись уже удалена или недоступна.", reply_markup=main_menu)
+        return
+
+    status_message = await message.answer("⚖️ Новая порция получена")
+    animation_task = asyncio.create_task(
+        animate_analysis(
+            status_message,
+            [
+                "⚖️ Уточняю размер порции...",
+                "🧠 Пересчитываю калории и БЖУ...",
+                "💾 Сохраняю изменения...",
+            ],
+            delay=0.9,
+        )
+    )
+
+    try:
+        nutrition = {
+            "title": row["title"],
+            "calories": row["calories"],
+            "protein_g": row["protein_g"],
+            "fat_g": row["fat_g"],
+            "carbs_g": row["carbs_g"],
+        }
+        updated = await asyncio.to_thread(
+            recalculate_food_portion,
+            nutrition,
+            message.text.strip(),
+        )
+        updated["title"] = row["title"]
+
+        saved = update_food_entry(
+            message.from_user.id,
+            int(entry_id),
+            updated["title"],
+            updated["calories"],
+            updated["protein_g"],
+            updated["fat_g"],
+            updated["carbs_g"],
+        )
+        if not saved:
+            raise RuntimeError("запись была удалена во время редактирования")
+
+        await state.clear()
+        await finish_analysis(animation_task, status_message, "✅ Порция сохранённой записи обновлена")
+        await message.answer(f"✅ {row['title']} обновлено.", reply_markup=main_menu)
+        await diary(message, message.from_user.id)
+
+    except Exception as exc:
+        await finish_analysis(animation_task, status_message, "❌ Не удалось изменить порцию")
+        await message.answer(
+            f"Не удалось изменить порцию: {exc}\n\n"
+            "Попробуй ещё раз: 150 г, 2 порции или половина порции.",
+            reply_markup=saved_food_edit_cancel_keyboard(),
+        )
+
+
+@router.callback_query(lambda c: c.data == "food:edit_cancel")
+async def cancel_saved_portion(callback: CallbackQuery, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state != FoodStates.waiting_saved_portion.state:
+        await callback.answer("Редактирование уже завершено.")
+        return
+
+    await state.clear()
+    await callback.message.edit_text("❌ Изменение порции отменено.")
+    await callback.answer()
+    await diary(callback.message, callback.from_user.id)
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("food:repeat:"))
 async def repeat_food(callback: CallbackQuery):
