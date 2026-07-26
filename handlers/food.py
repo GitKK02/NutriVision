@@ -12,6 +12,12 @@ from database import (
     get_food_entry,
     update_food_entry,
     recent_unique_foods,
+    add_favorite_from_food,
+    list_favorite_meals,
+    get_favorite_meal,
+    delete_favorite_meal,
+    toggle_favorite_for_food,
+    is_food_favorite,
     award,
     get_user,
     daily_summary,
@@ -20,6 +26,7 @@ from keyboards.main import (
     food_menu,
     confirm_food_keyboard,
     recent_foods_keyboard,
+    favorite_meals_keyboard,
     diary_entry_keyboard,
     saved_food_edit_cancel_keyboard,
     main_menu,
@@ -43,7 +50,7 @@ pending = {}
 SYSTEM_BUTTONS = {
     "📸 Анализ еды", "🍽 Питание", "💧 Вода", "📊 Сегодня",
     "📊 Прогресс", "📈 Прогресс", "☰ Меню", "🤖 AI Coach",
-    "📖 История", "📋 Дневник питания", "👤 Профиль",
+    "📖 История", "📋 Дневник питания", "⭐ Избранное", "👤 Профиль",
     "🎯 Моя цель", "⚖️ Вес", "🏆 Достижения",
     "⏰ Напоминания", "⬅️ Назад",
 }
@@ -99,6 +106,31 @@ async def food(message: Message, state: FSMContext):
             reply_markup=recent_foods_keyboard(recent_rows),
         )
 
+@router.message(lambda m: m.text == "⭐ Избранное")
+async def favorite_meals_screen(message: Message, user_id: int | None = None):
+    actual_user_id = user_id or message.from_user.id
+    rows = list_favorite_meals(actual_user_id)
+
+    if not rows:
+        await message.answer(
+            "⭐ Избранных блюд пока нет.\n\n"
+            "Открой дневник и нажми «⭐ В избранное» у нужного блюда.",
+            reply_markup=food_menu,
+        )
+        return
+
+    lines = ["⭐ Избранные блюда", ""]
+    for row in rows:
+        lines.append(
+            f"• {row['title']} — {round(float(row['calories'] or 0))} ккал"
+        )
+
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=favorite_meals_keyboard(rows),
+    )
+
+
 @router.message(lambda m: m.text == "📋 Дневник питания")
 async def diary(message: Message, user_id: int | None = None):
     actual_user_id = user_id or message.from_user.id
@@ -120,7 +152,10 @@ async def diary(message: Message, user_id: int | None = None):
         for row in entries:
             await message.answer(
                 format_diary_entry(row),
-                reply_markup=diary_entry_keyboard(row["id"]),
+                reply_markup=diary_entry_keyboard(
+                    row["id"],
+                    is_favorite=is_food_favorite(actual_user_id, row["id"]),
+                ),
             )
 
     await message.answer(
@@ -380,6 +415,83 @@ async def cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("Ок, не добавляю.", reply_markup=main_menu)
     await callback.answer()
+
+@router.callback_query(
+    lambda c: c.data and c.data.startswith("food:favorite_toggle:")
+)
+async def toggle_favorite_food(callback: CallbackQuery):
+    entry_id = int(callback.data.split(":")[-1])
+    result = toggle_favorite_for_food(callback.from_user.id, entry_id)
+
+    if result is None:
+        await callback.answer("Запись уже недоступна.", show_alert=True)
+        return
+
+    await callback.answer(
+        "Добавлено в избранное." if result == "added"
+        else "Удалено из избранного."
+    )
+    await diary(callback.message, callback.from_user.id)
+
+
+@router.callback_query(
+    lambda c: c.data and c.data.startswith("food:favorite_add:")
+)
+async def quick_add_favorite_food(callback: CallbackQuery, state: FSMContext):
+    favorite_id = int(callback.data.split(":")[-1])
+    row = get_favorite_meal(callback.from_user.id, favorite_id)
+
+    if not row:
+        await callback.answer("Избранное блюдо уже недоступно.", show_alert=True)
+        return
+
+    add_food(
+        callback.from_user.id,
+        row["title"],
+        row["calories"],
+        row["protein_g"],
+        row["fat_g"],
+        row["carbs_g"],
+        "favorite",
+    )
+
+    await state.clear()
+    await callback.answer("Блюдо добавлено.")
+    await callback.message.answer(
+        f"✅ {row['title']} добавлено из избранного.",
+        reply_markup=main_menu,
+    )
+
+    from services.formatters import dashboard
+
+    user = get_user(callback.from_user.id)
+    summary = daily_summary(callback.from_user.id)
+    assistant_text = nutrition_assistant_message(user, summary)
+    if assistant_text:
+        await callback.message.answer(assistant_text)
+
+    await callback.message.answer(
+        dashboard(user, summary),
+        reply_markup=today_actions_keyboard(),
+    )
+
+
+@router.callback_query(
+    lambda c: c.data and c.data.startswith("food:favorite_remove:")
+)
+async def remove_favorite_food(callback: CallbackQuery):
+    favorite_id = int(callback.data.split(":")[-1])
+    row = get_favorite_meal(callback.from_user.id, favorite_id)
+
+    if not row:
+        await callback.answer("Блюдо уже удалено из избранного.", show_alert=True)
+        return
+
+    delete_favorite_meal(callback.from_user.id, favorite_id)
+    await callback.answer("Удалено из избранного.")
+    await callback.message.answer(f"★ {row['title']} удалено из избранного.")
+    await favorite_meals_screen(callback.message, callback.from_user.id)
+
 
 @router.callback_query(
     lambda c: c.data and c.data.startswith("food:quick_add:")

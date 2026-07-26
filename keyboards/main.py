@@ -63,7 +63,10 @@ water_menu = ReplyKeyboardMarkup(
 
 food_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📋 Дневник питания")],
+        [
+            KeyboardButton(text="📋 Дневник питания"),
+            KeyboardButton(text="⭐ Избранное"),
+        ],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
@@ -104,8 +107,16 @@ def today_actions_keyboard():
         ]
     ])
 
-def diary_entry_keyboard(entry_id: int):
+def diary_entry_keyboard(entry_id: int, is_favorite: bool = False):
+    favorite_text = "★ Убрать из избранного" if is_favorite else "⭐ В избранное"
+
     return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text=favorite_text,
+                callback_data=f"food:favorite_toggle:{entry_id}",
+            ),
+        ],
         [
             InlineKeyboardButton(
                 text="✏️ Изменить порцию",
@@ -123,6 +134,30 @@ def diary_entry_keyboard(entry_id: int):
             ),
         ],
     ])
+
+
+def favorite_meals_keyboard(rows):
+    buttons = []
+
+    for row in rows:
+        title = str(row.get("title") or "Блюдо").strip()
+        if len(title) > 28:
+            title = title[:25].rstrip() + "..."
+
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"➕ {title}",
+                callback_data=f"food:favorite_add:{row['id']}",
+            )
+        ])
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"★ Удалить {title}",
+                callback_data=f"food:favorite_remove:{row['id']}",
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def saved_food_edit_cancel_keyboard():

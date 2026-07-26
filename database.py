@@ -67,6 +67,20 @@ def init_db():
             created_at TEXT NOT NULL,
             UNIQUE(telegram_id, code)
         );
+
+        CREATE TABLE IF NOT EXISTS favorite_meals(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            normalized_title TEXT NOT NULL,
+            title TEXT NOT NULL,
+            calories REAL DEFAULT 0,
+            protein_g REAL DEFAULT 0,
+            fat_g REAL DEFAULT 0,
+            carbs_g REAL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(telegram_id, normalized_title)
+        );
         """)
 
 def ensure_user(user_id: int, first_name: str = "", username: str = ""):
@@ -206,6 +220,154 @@ def recent_unique_foods(user_id: int, limit: int = 5):
             (user_id, user_id, safe_limit),
         ).fetchall()
         return [dict(row) for row in rows]
+
+def _normalize_food_title(title: str) -> str:
+    return " ".join(str(title or "").strip().lower().split())
+
+
+def add_favorite_from_food(user_id: int, entry_id: int) -> bool:
+    row = get_food_entry(user_id, entry_id)
+    if not row:
+        return False
+
+    normalized_title = _normalize_food_title(row["title"])
+    if not normalized_title:
+        return False
+
+    now = datetime.now().isoformat()
+
+    with connect() as db:
+        existing = db.execute(
+            """
+            SELECT id FROM favorite_meals
+            WHERE telegram_id=? AND normalized_title=?
+            """,
+            (user_id, normalized_title),
+        ).fetchone()
+
+        if existing:
+            db.execute(
+                """
+                UPDATE favorite_meals
+                SET title=?, calories=?, protein_g=?, fat_g=?, carbs_g=?, updated_at=?
+                WHERE id=? AND telegram_id=?
+                """,
+                (
+                    row["title"],
+                    float(row["calories"] or 0),
+                    float(row["protein_g"] or 0),
+                    float(row["fat_g"] or 0),
+                    float(row["carbs_g"] or 0),
+                    now,
+                    existing["id"],
+                    user_id,
+                ),
+            )
+            return True
+
+        db.execute(
+            """
+            INSERT INTO favorite_meals(
+                telegram_id, normalized_title, title, calories,
+                protein_g, fat_g, carbs_g, created_at, updated_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                user_id,
+                normalized_title,
+                row["title"],
+                float(row["calories"] or 0),
+                float(row["protein_g"] or 0),
+                float(row["fat_g"] or 0),
+                float(row["carbs_g"] or 0),
+                now,
+                now,
+            ),
+        )
+        return True
+
+
+def list_favorite_meals(user_id: int, limit: int = 20):
+    safe_limit = max(1, min(int(limit), 50))
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT * FROM favorite_meals
+            WHERE telegram_id=?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (user_id, safe_limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_favorite_meal(user_id: int, favorite_id: int):
+    with connect() as db:
+        row = db.execute(
+            """
+            SELECT * FROM favorite_meals
+            WHERE id=? AND telegram_id=?
+            """,
+            (favorite_id, user_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_favorite_meal(user_id: int, favorite_id: int) -> bool:
+    with connect() as db:
+        cursor = db.execute(
+            "DELETE FROM favorite_meals WHERE id=? AND telegram_id=?",
+            (favorite_id, user_id),
+        )
+        return cursor.rowcount == 1
+
+
+def is_food_favorite(user_id: int, entry_id: int) -> bool:
+    row = get_food_entry(user_id, entry_id)
+    if not row:
+        return False
+
+    normalized_title = _normalize_food_title(row["title"])
+    if not normalized_title:
+        return False
+
+    with connect() as db:
+        favorite = db.execute(
+            """
+            SELECT id FROM favorite_meals
+            WHERE telegram_id=? AND normalized_title=?
+            """,
+            (user_id, normalized_title),
+        ).fetchone()
+        return favorite is not None
+
+
+def toggle_favorite_for_food(user_id: int, entry_id: int) -> str | None:
+    row = get_food_entry(user_id, entry_id)
+    if not row:
+        return None
+
+    normalized_title = _normalize_food_title(row["title"])
+    if not normalized_title:
+        return None
+
+    with connect() as db:
+        favorite = db.execute(
+            """
+            SELECT id FROM favorite_meals
+            WHERE telegram_id=? AND normalized_title=?
+            """,
+            (user_id, normalized_title),
+        ).fetchone()
+
+    if favorite:
+        delete_favorite_meal(user_id, int(favorite["id"]))
+        return "removed"
+
+    return "added" if add_favorite_from_food(user_id, entry_id) else None
+
 
 def add_water(user_id: int, amount_ml: int):
     with connect() as db:
