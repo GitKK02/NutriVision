@@ -2,6 +2,7 @@ from aiogram import Router
 from aiogram.types import Message
 from database import get_user, daily_summary
 from keyboards.main import today_actions_keyboard
+from services.daily_score import format_daily_score
 
 router = Router()
 
@@ -12,6 +13,18 @@ def progress_bar(value, target):
     percent = min(100, round(value / target * 100))
     filled = round(percent / 10)
     return "█" * filled + "░" * (10 - filled) + f" {percent}%"
+
+
+@router.callback_query(lambda c: c.data == "today:score")
+async def today_score(callback):
+    user = get_user(callback.from_user.id)
+    summary = daily_summary(callback.from_user.id)
+
+    await callback.answer()
+    await callback.message.answer(
+        format_daily_score(user, summary),
+        reply_markup=today_actions_keyboard(),
+    )
 
 
 @router.message(lambda m: m.text == "📊 Сегодня")

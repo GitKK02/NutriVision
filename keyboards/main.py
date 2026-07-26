@@ -103,7 +103,8 @@ def today_actions_keyboard():
             InlineKeyboardButton(text="💧 Добавить воду", callback_data="today:add_water"),
         ],
         [
-            InlineKeyboardButton(text="📖 Дневник", callback_data="today:diary")
+            InlineKeyboardButton(text="📖 Дневник", callback_data="today:diary"),
+            InlineKeyboardButton(text="🥗 Score", callback_data="today:score"),
         ]
     ])
 

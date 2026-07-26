@@ -37,6 +37,7 @@ from services.openai_service import (
     reanalyze_food_text, reanalyze_food_image, available,
 )
 from services.nutrition_assistant import nutrition_assistant_message
+from services.daily_score import format_daily_score
 from services.food_diary import (
     format_diary_entry,
     format_diary_summary,
@@ -87,6 +88,13 @@ async def finish_analysis(animation_task: asyncio.Task, status_message: Message,
         await status_message.edit_text(text)
     except Exception:
         pass
+
+
+async def send_daily_score(message: Message, user_id: int):
+    user = get_user(user_id)
+    summary = daily_summary(user_id)
+    await message.answer(format_daily_score(user, summary))
+
 
 @router.message(lambda m: m.text in ["🍽 Питание", "📸 Анализ еды"])
 async def food(message: Message, state: FSMContext):
@@ -403,6 +411,8 @@ async def add_pending(callback: CallbackQuery, state: FSMContext):
     if assistant_text:
         await callback.message.answer(assistant_text)
 
+    await callback.message.answer(format_daily_score(user, summary))
+
     await callback.message.answer(
         dashboard(user, summary),
         reply_markup=today_actions_keyboard(),
@@ -470,6 +480,8 @@ async def quick_add_favorite_food(callback: CallbackQuery, state: FSMContext):
     if assistant_text:
         await callback.message.answer(assistant_text)
 
+    await callback.message.answer(format_daily_score(user, summary))
+
     await callback.message.answer(
         dashboard(user, summary),
         reply_markup=today_actions_keyboard(),
@@ -528,6 +540,8 @@ async def quick_add_recent_food(callback: CallbackQuery, state: FSMContext):
     assistant_text = nutrition_assistant_message(user, summary)
     if assistant_text:
         await callback.message.answer(assistant_text)
+
+    await callback.message.answer(format_daily_score(user, summary))
 
     await callback.message.answer(
         dashboard(user, summary),
