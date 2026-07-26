@@ -185,6 +185,28 @@ def today_food(user_id: int):
         """, (user_id, day)).fetchall()
         return [dict(r) for r in rows]
 
+def recent_unique_foods(user_id: int, limit: int = 5):
+    safe_limit = max(1, min(int(limit), 10))
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT f.*
+            FROM food_entries AS f
+            INNER JOIN (
+                SELECT LOWER(TRIM(title)) AS normalized_title,
+                       MAX(id) AS latest_id
+                FROM food_entries
+                WHERE telegram_id=? AND TRIM(title) <> ''
+                GROUP BY LOWER(TRIM(title))
+            ) AS latest ON latest.latest_id = f.id
+            WHERE f.telegram_id=?
+            ORDER BY f.created_at DESC, f.id DESC
+            LIMIT ?
+            """,
+            (user_id, user_id, safe_limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
 def add_water(user_id: int, amount_ml: int):
     with connect() as db:
         db.execute(

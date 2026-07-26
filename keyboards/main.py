@@ -79,6 +79,20 @@ def confirm_food_keyboard():
         [InlineKeyboardButton(text="❌ Отмена", callback_data="food:cancel")],
     ])
 
+def recent_foods_keyboard(rows):
+    buttons = []
+    for row in rows:
+        title = str(row.get("title") or "Блюдо").strip()
+        if len(title) > 30:
+            title = title[:27].rstrip() + "..."
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"➕ {title}",
+                callback_data=f"food:quick_add:{row['id']}",
+            )
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def today_actions_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [

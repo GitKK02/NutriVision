@@ -11,6 +11,7 @@ from database import (
     delete_food,
     get_food_entry,
     update_food_entry,
+    recent_unique_foods,
     award,
     get_user,
     daily_summary,
@@ -18,6 +19,7 @@ from database import (
 from keyboards.main import (
     food_menu,
     confirm_food_keyboard,
+    recent_foods_keyboard,
     diary_entry_keyboard,
     saved_food_edit_cancel_keyboard,
     main_menu,
@@ -81,11 +83,21 @@ async def finish_analysis(animation_task: asyncio.Task, status_message: Message,
 
 @router.message(lambda m: m.text in ["🍽 Питание", "📸 Анализ еды"])
 async def food(message: Message, state: FSMContext):
+    await state.clear()
     await state.set_state(FoodStates.waiting_text)
     await message.answer(
-        "🍽 Добавь питание\n\nНапиши, что съел, или отправь фото еды.",
-        reply_markup=food_menu
+        "🍽 Добавь питание\n\n"
+        "Напиши, что съел, или отправь фото еды.",
+        reply_markup=food_menu,
     )
+
+    recent_rows = recent_unique_foods(message.from_user.id, limit=5)
+    if recent_rows:
+        await message.answer(
+            "🕒 Недавние блюда\n\n"
+            "Нажми на блюдо, чтобы добавить его снова без нового анализа.",
+            reply_markup=recent_foods_keyboard(recent_rows),
+        )
 
 @router.message(lambda m: m.text == "📋 Дневник питания")
 async def diary(message: Message, user_id: int | None = None):
@@ -368,6 +380,48 @@ async def cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("Ок, не добавляю.", reply_markup=main_menu)
     await callback.answer()
+
+@router.callback_query(
+    lambda c: c.data and c.data.startswith("food:quick_add:")
+)
+async def quick_add_recent_food(callback: CallbackQuery, state: FSMContext):
+    entry_id = int(callback.data.split(":")[-1])
+    row = get_food_entry(callback.from_user.id, entry_id)
+
+    if not row:
+        await callback.answer("Это блюдо уже недоступно.", show_alert=True)
+        return
+
+    add_food(
+        callback.from_user.id,
+        row["title"],
+        row["calories"],
+        row["protein_g"],
+        row["fat_g"],
+        row["carbs_g"],
+        "recent",
+    )
+
+    await state.clear()
+    await callback.answer("Блюдо добавлено.")
+    await callback.message.answer(
+        f"✅ {row['title']} добавлено из недавних блюд.",
+        reply_markup=main_menu,
+    )
+
+    from services.formatters import dashboard
+
+    user = get_user(callback.from_user.id)
+    summary = daily_summary(callback.from_user.id)
+    assistant_text = nutrition_assistant_message(user, summary)
+    if assistant_text:
+        await callback.message.answer(assistant_text)
+
+    await callback.message.answer(
+        dashboard(user, summary),
+        reply_markup=today_actions_keyboard(),
+    )
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("food:edit:"))
 async def request_saved_portion(callback: CallbackQuery, state: FSMContext):
